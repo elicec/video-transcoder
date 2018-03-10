@@ -372,59 +372,11 @@ public class MainActivity extends AppCompatActivity
         fileChooser.show();
     }
 
-    private void startEncode()
+    private List<String> getFfmpegEncodingArgs(String inputFilePath, int startTimeSec, int endTimeSec, int durationSec,
+                                               MediaContainer container, VideoCodec videoCodec, Integer videoBitrate,
+                                               String resolution, String fps, AudioCodec audioCodec, Integer audioSampleRate,
+                                               String audioChannel, Integer audioBitrate, String destinationFilePath)
     {
-        MediaContainer container = (MediaContainer)containerSpinner.getSelectedItem();
-        VideoCodecWrapper videoCodecWrapper = (VideoCodecWrapper)videoCodecSpinner.getSelectedItem();
-        VideoCodec videoCodec = videoCodecWrapper != null ? videoCodecWrapper.codec : null;
-        String fps = (String)fpsSpinner.getSelectedItem();
-        String resolution = (String)resolutionSpinner.getSelectedItem();
-        AudioCodec audioCodec = (AudioCodec) audioCodecSpinner.getSelectedItem();
-        Integer audioBitrate = (Integer) audioBitrateSpinner.getSelectedItem();
-        Integer audioSampleRate = (Integer) audioSampleRateSpinner.getSelectedItem();
-        String audioChannel = (String) audioChannelSpinner.getSelectedItem();
-        int videoBitrate;
-
-        if(videoInfo == null)
-        {
-            Toast.makeText(this, R.string.selectFileFirst, Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        try
-        {
-            String videoBitrateStr = videoBitrateValue.getText().toString();
-            videoBitrate = Integer.parseInt(videoBitrateStr);
-        }
-        catch(NumberFormatException e)
-        {
-            Toast.makeText(this, R.string.videoBitrateValueInvalid, Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        File outputDir;
-
-        if(container.supportedVideoCodecs.size() > 0)
-        {
-            outputDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
-        }
-        else
-        {
-            outputDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
-        }
-
-        String filePrefix = "Video_Transcoder_Output";
-        String extension = "." + container.extension;
-        String inputFilePath = videoInfo.file.getAbsolutePath();
-
-        File destination = new File(outputDir, filePrefix + extension);
-        int fileNo = 0;
-        while (destination.exists())
-        {
-            fileNo++;
-            destination = new File(outputDir, filePrefix + "_" + fileNo + extension);
-        }
-
         List<String> command = new LinkedList<>();
 
         // If the output exists, overwrite it
@@ -434,7 +386,6 @@ public class MainActivity extends AppCompatActivity
         command.add("-i");
         command.add(inputFilePath);
 
-        int startTimeSec = rangeSeekBar.getSelectedMinValue().intValue();
         if(startTimeSec != 0)
         {
             // Start time offset
@@ -442,9 +393,7 @@ public class MainActivity extends AppCompatActivity
             command.add(Integer.toString(startTimeSec));
         }
 
-        int endTimeSec = rangeSeekBar.getSelectedMaxValue().intValue();
-        int durationSec = endTimeSec - startTimeSec;
-        if( (videoInfo.durationMs)/1000 != endTimeSec)
+        if(durationSec != endTimeSec)
         {
             // Duration of media file
             command.add("-t");
@@ -518,8 +467,71 @@ public class MainActivity extends AppCompatActivity
         }
 
         // Output file
-        command.add(destination.getAbsolutePath());
+        command.add(destinationFilePath);
 
+        return command;
+    }
+
+    private void startEncode()
+    {
+        MediaContainer container = (MediaContainer)containerSpinner.getSelectedItem();
+        VideoCodecWrapper videoCodecWrapper = (VideoCodecWrapper)videoCodecSpinner.getSelectedItem();
+        VideoCodec videoCodec = videoCodecWrapper != null ? videoCodecWrapper.codec : null;
+        String fps = (String)fpsSpinner.getSelectedItem();
+        String resolution = (String)resolutionSpinner.getSelectedItem();
+        AudioCodec audioCodec = (AudioCodec) audioCodecSpinner.getSelectedItem();
+        Integer audioBitrate = (Integer) audioBitrateSpinner.getSelectedItem();
+        Integer audioSampleRate = (Integer) audioSampleRateSpinner.getSelectedItem();
+        String audioChannel = (String) audioChannelSpinner.getSelectedItem();
+        int videoBitrate;
+
+        if(videoInfo == null)
+        {
+            Toast.makeText(this, R.string.selectFileFirst, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        try
+        {
+            String videoBitrateStr = videoBitrateValue.getText().toString();
+            videoBitrate = Integer.parseInt(videoBitrateStr);
+        }
+        catch(NumberFormatException e)
+        {
+            Toast.makeText(this, R.string.videoBitrateValueInvalid, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        File outputDir;
+
+        if(container.supportedVideoCodecs.size() > 0)
+        {
+            outputDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
+        }
+        else
+        {
+            outputDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
+        }
+
+        String filePrefix = "Video_Transcoder_Output";
+        String extension = "." + container.extension;
+        String inputFilePath = videoInfo.file.getAbsolutePath();
+
+        File destination = new File(outputDir, filePrefix + extension);
+        int fileNo = 0;
+        while (destination.exists())
+        {
+            fileNo++;
+            destination = new File(outputDir, filePrefix + "_" + fileNo + extension);
+        }
+
+        int startTimeSec = rangeSeekBar.getSelectedMinValue().intValue();
+        int endTimeSec = rangeSeekBar.getSelectedMaxValue().intValue();
+        int durationSec = endTimeSec - startTimeSec;
+
+        List<String> args = getFfmpegEncodingArgs(inputFilePath, startTimeSec, endTimeSec, durationSec,
+                container, videoCodec, videoBitrate, resolution, fps, audioCodec, audioSampleRate,
+                audioChannel, audioBitrate, destination.getAbsolutePath());
 
         updateUiForEncoding();
 
@@ -529,7 +541,7 @@ public class MainActivity extends AppCompatActivity
 
         // Extras, work duration.
         PersistableBundle extras = new PersistableBundle();
-        extras.putStringArray(FFMPEG_ENCODE_ARGS, command.toArray(new String[command.size()]));
+        extras.putStringArray(FFMPEG_ENCODE_ARGS, args.toArray(new String[args.size()]));
         extras.putString(FFMPEG_OUTPUT_FILE, destination.getAbsolutePath());
         extras.putString(OUTPUT_MIMETYPE, container.mimetype);
         extras.putInt(OUTPUT_DURATION_MS, durationSec*1000);
