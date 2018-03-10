@@ -372,7 +372,7 @@ public class MainActivity extends AppCompatActivity
         fileChooser.show();
     }
 
-    private List<String> getFfmpegEncodingArgs(String inputFilePath, int startTimeSec, int endTimeSec, int durationSec,
+    private List<String> getFfmpegEncodingArgs(String inputFilePath, Integer startTimeSec, Integer endTimeSec, Integer durationSec,
                                                MediaContainer container, VideoCodec videoCodec, Integer videoBitrate,
                                                String resolution, String fps, AudioCodec audioCodec, Integer audioSampleRate,
                                                String audioChannel, Integer audioBitrate, String destinationFilePath)
@@ -386,18 +386,24 @@ public class MainActivity extends AppCompatActivity
         command.add("-i");
         command.add(inputFilePath);
 
-        if(startTimeSec != 0)
+        if(startTimeSec != null)
         {
-            // Start time offset
-            command.add("-ss");
-            command.add(Integer.toString(startTimeSec));
+            if (startTimeSec != 0)
+            {
+                // Start time offset
+                command.add("-ss");
+                command.add(Integer.toString(startTimeSec));
+            }
         }
 
-        if(durationSec != endTimeSec)
+        if(durationSec != null && endTimeSec != null)
         {
-            // Duration of media file
-            command.add("-t");
-            command.add(Integer.toString(durationSec));
+            if(durationSec.equals(endTimeSec) == false)
+            {
+                // Duration of media file
+                command.add("-t");
+                command.add(Integer.toString(durationSec));
+            }
         }
 
         if(container.supportedVideoCodecs.size() > 0)
@@ -472,6 +478,40 @@ public class MainActivity extends AppCompatActivity
         return command;
     }
 
+    private void startEncode(String inputFilePath, int startTimeSec, int endTimeSec, int durationSec,
+                             MediaContainer container, VideoCodec videoCodec, Integer videoBitrate,
+                             String resolution, String fps, AudioCodec audioCodec, Integer audioSampleRate,
+                             String audioChannel, Integer audioBitrate, String destinationFilePath)
+    {
+        List<String> args = getFfmpegEncodingArgs(inputFilePath, startTimeSec, endTimeSec, durationSec,
+                container, videoCodec, videoBitrate, resolution, fps, audioCodec, audioSampleRate,
+                audioChannel, audioBitrate, destinationFilePath);
+
+        updateUiForEncoding();
+
+        JobInfo.Builder builder = new JobInfo.Builder(1, serviceComponent);
+        builder.setOverrideDeadline(0);
+
+        // Extras, work duration.
+        PersistableBundle extras = new PersistableBundle();
+        extras.putStringArray(FFMPEG_ENCODE_ARGS, args.toArray(new String[args.size()]));
+        extras.putString(FFMPEG_OUTPUT_FILE, destinationFilePath);
+        extras.putString(OUTPUT_MIMETYPE, container.mimetype);
+        extras.putInt(OUTPUT_DURATION_MS, durationSec*1000);
+        builder.setExtras(extras);
+
+        // Schedule job
+        Log.d(TAG, "Scheduling job");
+        JobScheduler scheduler = (JobScheduler) getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        if(scheduler == null)
+        {
+            Toast.makeText(this, R.string.transcodeFailed, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        scheduler.schedule(builder.build());
+    }
+
     private void startEncode()
     {
         MediaContainer container = (MediaContainer)containerSpinner.getSelectedItem();
@@ -529,34 +569,9 @@ public class MainActivity extends AppCompatActivity
         int endTimeSec = rangeSeekBar.getSelectedMaxValue().intValue();
         int durationSec = endTimeSec - startTimeSec;
 
-        List<String> args = getFfmpegEncodingArgs(inputFilePath, startTimeSec, endTimeSec, durationSec,
-                container, videoCodec, videoBitrate, resolution, fps, audioCodec, audioSampleRate,
-                audioChannel, audioBitrate, destination.getAbsolutePath());
-
-        updateUiForEncoding();
-
-
-        JobInfo.Builder builder = new JobInfo.Builder(1, serviceComponent);
-        builder.setOverrideDeadline(0);
-
-        // Extras, work duration.
-        PersistableBundle extras = new PersistableBundle();
-        extras.putStringArray(FFMPEG_ENCODE_ARGS, args.toArray(new String[args.size()]));
-        extras.putString(FFMPEG_OUTPUT_FILE, destination.getAbsolutePath());
-        extras.putString(OUTPUT_MIMETYPE, container.mimetype);
-        extras.putInt(OUTPUT_DURATION_MS, durationSec*1000);
-        builder.setExtras(extras);
-
-        // Schedule job
-        Log.d(TAG, "Scheduling job");
-        JobScheduler scheduler = (JobScheduler) getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if(scheduler == null)
-        {
-            Toast.makeText(this, R.string.transcodeFailed, Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        scheduler.schedule(builder.build());
+        startEncode(inputFilePath, startTimeSec, endTimeSec, durationSec, container, videoCodec,
+                    videoBitrate, resolution, fps, audioCodec, audioSampleRate, audioChannel,
+                    audioBitrate, destination.getAbsolutePath());
     }
 
     private void updateUiForEncoding()
