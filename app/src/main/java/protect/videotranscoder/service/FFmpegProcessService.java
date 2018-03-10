@@ -17,6 +17,7 @@ import android.util.Log;
 import java.io.File;
 
 import nl.bravobit.ffmpeg.ExecuteBinaryResponseHandler;
+import nl.bravobit.ffmpeg.FFprobe;
 import protect.videotranscoder.FFmpegUtil;
 import protect.videotranscoder.R;
 import protect.videotranscoder.ResultCallbackHandler;
