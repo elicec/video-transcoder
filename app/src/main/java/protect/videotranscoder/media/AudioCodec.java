@@ -29,11 +29,14 @@ public enum AudioCodec
     @Nullable
     public static AudioCodec fromName(String name)
     {
-        for(AudioCodec item : values())
+        if(name != null)
         {
-            if(item.ffmpegName.equals(name))
+            for (AudioCodec item : values())
             {
-                return item;
+                if (item.ffmpegName.equals(name))
+                {
+                    return item;
+                }
             }
         }
 
