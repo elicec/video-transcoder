@@ -43,6 +43,7 @@ import com.crystal.crystalrangeseekbar.interfaces.OnRangeSeekbarChangeListener;
 import com.google.common.collect.ImmutableMap;
 
 import com.crystal.crystalrangeseekbar.widgets.CrystalRangeSeekbar;
+import org.javatuples.Triplet;
 
 import java.io.File;
 import java.lang.ref.WeakReference;
@@ -57,7 +58,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.regex.Pattern;
 
 import protect.videotranscoder.BuildConfig;
 import protect.videotranscoder.FFmpegUtil;
@@ -233,6 +233,125 @@ public class MainActivity extends AppCompatActivity
         {
             showUnsupportedExceptionDialog();
         }
+
+        Intent intent = getIntent();
+        if(intent != null)
+        {
+            String action = intent.getAction();
+            if(action != null && action.equals("protect.videotranscoder.ENCODE"))
+            {
+                handleEncodeIntent(intent);
+            }
+        }
+    }
+
+    @Override
+    public void onNewIntent(Intent intent)
+    {
+        handleEncodeIntent(intent);
+    }
+
+    private void handleEncodeIntent(Intent intent)
+    {
+        final String inputFilePath = intent.getStringExtra("inputVideoFilePath");
+        final String destinationFilePath = intent.getStringExtra("outputFilePath");
+
+        String mediaContainerStr = intent.getStringExtra("mediaContainer");
+        final MediaContainer container = MediaContainer.fromName(mediaContainerStr);
+
+        String videoCodecStr = intent.getStringExtra("videoCodec");
+        final VideoCodec videoCodec = VideoCodec.fromName(videoCodecStr);
+
+        int tmpCideoBitrateK = intent.getIntExtra("videoBitrateK", -1);
+        final Integer videoBitrateK = tmpCideoBitrateK != -1 ? tmpCideoBitrateK : null;
+
+        final String resolution = intent.getStringExtra("resolution");
+        final String fps = intent.getStringExtra("fps");
+
+        String audioCodecStr = intent.getStringExtra("audioCodec");
+        final AudioCodec audioCodec = AudioCodec.fromName(audioCodecStr);
+
+        int tmpAudioSampleRate = intent.getIntExtra("audioSampleRate", -1);
+        final Integer audioSampleRate = tmpAudioSampleRate != -1 ? tmpAudioSampleRate : null;
+
+        final String audioChannel = intent.getStringExtra("audioChannel");
+
+        int tmpAudioBitrateK = intent.getIntExtra("audioBitrateK", -1);
+        final Integer audioBitrateK = tmpAudioBitrateK != -1 ? tmpAudioBitrateK : null;
+
+        List<Triplet<Object, Integer, String>> nullChecks = new LinkedList<>();
+        nullChecks.add(new Triplet<>((Object)inputFilePath, R.string.fieldMissingError, "inputFilePath"));
+        nullChecks.add(new Triplet<>((Object)destinationFilePath, R.string.fieldMissingError, "outputFilePath"));
+        nullChecks.add(new Triplet<>((Object)container, R.string.fieldMissingOrInvalidError, "mediaContainer"));
+        if(container != null && container.supportedVideoCodecs.size() > 0)
+        {
+            nullChecks.add(new Triplet<>((Object)videoCodec, R.string.fieldMissingOrInvalidError, "videoCodec"));
+            nullChecks.add(new Triplet<>((Object)videoBitrateK, R.string.fieldMissingError, "videoBitrateK missing"));
+            nullChecks.add(new Triplet<>((Object)resolution, R.string.fieldMissingError, "resolution"));
+            nullChecks.add(new Triplet<>((Object)fps, R.string.fieldMissingError, "fps"));
+        }
+        if(container != null && container.supportedAudioCodecs.size() > 0)
+        {
+            nullChecks.add(new Triplet<>((Object)audioCodec, R.string.fieldMissingOrInvalidError, "audioCodec"));
+            nullChecks.add(new Triplet<>((Object)audioSampleRate, R.string.fieldMissingError, "audioSampleRate"));
+            nullChecks.add(new Triplet<>((Object)audioChannel, R.string.fieldMissingError, "audioChannel"));
+            nullChecks.add(new Triplet<>((Object)audioBitrateK, R.string.fieldMissingError, "audioBitrateK"));
+        }
+
+        for(Triplet<Object, Integer, String> check : nullChecks)
+        {
+            if(check.getValue0() == null)
+            {
+                String submsg = String.format(getString(check.getValue1()), check.getValue2());
+                String message = String.format(getString(R.string.cannotEncodeFile), submsg);
+                Log.i(TAG, message);
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                finish();
+                return;
+            }
+        }
+
+        String message = String.format(getString(R.string.encodeStartConfirmation), inputFilePath, destinationFilePath);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setMessage(message)
+            .setCancelable(false)
+            .setNegativeButton(R.string.cancel, new DialogInterface.OnClickListener()
+            {
+                @Override
+                public void onClick(DialogInterface dialog, int which)
+                {
+                    finish();
+                    dialog.dismiss();
+                }
+            })
+            .setPositiveButton(R.string.encode, new DialogInterface.OnClickListener()
+            {
+                public void onClick(final DialogInterface dialog, int which)
+                {
+                    FFmpegUtil.getMediaDetails(new File(inputFilePath), new ResultCallbackHandler<MediaInfo>()
+                    {
+                        @Override
+                        public void onResult(MediaInfo result)
+                        {
+                            if(result != null)
+                            {
+                                startEncode(inputFilePath, 0, (int)(result.durationMs/1000), container, videoCodec, videoBitrateK,
+                                        resolution, fps, audioCodec, audioSampleRate, audioChannel, audioBitrateK, destinationFilePath);
+                            }
+                            else
+                            {
+                                String message = String.format(getString(R.string.transcodeFailed), getString(R.string.couldNotFindFileSubmsg));
+                                Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                                finish();
+                                dialog.dismiss();
+                            }
+                        }
+                    });
+                }
+            }).create();
+
+        dialog.show();
     }
 
     private void showUnsupportedExceptionDialog()
@@ -365,7 +484,7 @@ public class MainActivity extends AppCompatActivity
         fileChooser.show();
     }
 
-    private List<String> getFfmpegEncodingArgs(String inputFilePath, Integer startTimeSec, Integer endTimeSec, Integer durationSec,
+    private List<String> getFfmpegEncodingArgs(String inputFilePath, Integer startTimeSec, Integer endTimeSec,
                                                MediaContainer container, VideoCodec videoCodec, Integer videoBitrateK,
                                                String resolution, String fps, AudioCodec audioCodec, Integer audioSampleRate,
                                                String audioChannel, Integer audioBitrateK, String destinationFilePath)
@@ -387,15 +506,16 @@ public class MainActivity extends AppCompatActivity
                 command.add("-ss");
                 command.add(Integer.toString(startTimeSec));
             }
-        }
 
-        if(durationSec != null && endTimeSec != null)
-        {
-            if(durationSec.equals(endTimeSec) == false)
+            if(endTimeSec != null)
             {
-                // Duration of media file
-                command.add("-t");
-                command.add(Integer.toString(durationSec));
+                int durationSec = endTimeSec - startTimeSec;
+                if(durationSec != endTimeSec)
+                {
+                    // Duration of media file
+                    command.add("-t");
+                    command.add(Integer.toString(durationSec));
+                }
             }
         }
 
@@ -471,12 +591,12 @@ public class MainActivity extends AppCompatActivity
         return command;
     }
 
-    private void startEncode(String inputFilePath, int startTimeSec, int endTimeSec, int durationSec,
+    private void startEncode(String inputFilePath, Integer startTimeSec, Integer endTimeSec,
                              MediaContainer container, VideoCodec videoCodec, Integer videoBitrateK,
                              String resolution, String fps, AudioCodec audioCodec, Integer audioSampleRate,
                              String audioChannel, Integer audioBitrateK, String destinationFilePath)
     {
-        List<String> args = getFfmpegEncodingArgs(inputFilePath, startTimeSec, endTimeSec, durationSec,
+        List<String> args = getFfmpegEncodingArgs(inputFilePath, startTimeSec, endTimeSec,
                 container, videoCodec, videoBitrateK, resolution, fps, audioCodec, audioSampleRate,
                 audioChannel, audioBitrateK, destinationFilePath);
 
@@ -484,6 +604,8 @@ public class MainActivity extends AppCompatActivity
 
         JobInfo.Builder builder = new JobInfo.Builder(1, serviceComponent);
         builder.setOverrideDeadline(0);
+
+        int durationSec = endTimeSec - startTimeSec;
 
         // Extras, work duration.
         PersistableBundle extras = new PersistableBundle();
@@ -560,9 +682,8 @@ public class MainActivity extends AppCompatActivity
 
         int startTimeSec = rangeSeekBar.getSelectedMinValue().intValue();
         int endTimeSec = rangeSeekBar.getSelectedMaxValue().intValue();
-        int durationSec = endTimeSec - startTimeSec;
 
-        startEncode(inputFilePath, startTimeSec, endTimeSec, durationSec, container, videoCodec,
+        startEncode(inputFilePath, startTimeSec, endTimeSec, container, videoCodec,
                     videoBitrateK, resolution, fps, audioCodec, audioSampleRate, audioChannel,
                     audioBitrateK, destination.getAbsolutePath());
     }
@@ -1239,6 +1360,7 @@ public class MainActivity extends AppCompatActivity
             .put("Guava", "https://github.com/google/guava")
             .put("Crystal Range Seekbar", "https://github.com/syedowaisali/crystal-range-seekbar")
             .put("Storage Chooser", "https://github.com/codekidX/storage-chooser")
+            .put("javatuples", "https://www.javatuples.org/")
             .put("jackson-databind", "https://github.com/FasterXML/jackson-databind")
             .build();
 
